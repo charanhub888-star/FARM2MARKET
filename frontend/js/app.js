@@ -6,7 +6,7 @@ const state = {
   locale: {},
 };
 const isGithubPages = window.location.hostname.endsWith("github.io");
-const assetUrl = (path) => new URL(isGithubPages ? `./frontend/${path.replace("./", "")}` : path, document.baseURI).toString();
+const assetUrl = (path) => new URL(path, document.baseURI).toString();
 const demoProducts = [
   { id: 1, crop: "Tomato", quantity: 1200, unit: "kg", price: 24, location: "Guntur", available_date: new Date().toISOString().slice(0, 10), farmer_name: "Lakshmi Reddy", verified: true, description: "Fresh field tomatoes. Demo listing." },
   { id: 2, crop: "Rice", quantity: 30, unit: "quintal", price: 3200, location: "Warangal", available_date: new Date().toISOString().slice(0, 10), farmer_name: "Lakshmi Reddy", verified: true, description: "Sona masuri rice. Demo listing." },

@@ -29,6 +29,7 @@ jobs:
         run: |
           mkdir -p _site
           cp -R frontend/. _site/
+          touch _site/.nojekyll
       - name: Upload static frontend
         uses: actions/upload-pages-artifact@v3
         with:
