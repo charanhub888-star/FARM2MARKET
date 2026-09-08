@@ -5,6 +5,17 @@ const state = {
   lang: localStorage.getItem("f2m-lang") || "en",
   locale: {},
 };
+const isGithubPages = window.location.hostname.endsWith("github.io");
+const assetUrl = (path) => new URL(path, document.baseURI).toString();
+const demoProducts = [
+  { id: 1, crop: "Tomato", quantity: 1200, unit: "kg", price: 24, location: "Guntur", available_date: new Date().toISOString().slice(0, 10), farmer_name: "Lakshmi Reddy", verified: true, description: "Fresh field tomatoes. Demo listing." },
+  { id: 2, crop: "Rice", quantity: 30, unit: "quintal", price: 3200, location: "Warangal", available_date: new Date().toISOString().slice(0, 10), farmer_name: "Lakshmi Reddy", verified: true, description: "Sona masuri rice. Demo listing." },
+];
+const demoPrices = [
+  { crop: "Tomato", location: "Guntur", low: 18, average: 24, high: 31, updated_at: "Demo data", source: "DEMO DATA" },
+  { crop: "Rice", location: "Warangal", low: 2800, average: 3200, high: 3600, updated_at: "Demo data", source: "DEMO DATA" },
+  { crop: "Chilli", location: "Guntur", low: 90, average: 110, high: 135, updated_at: "Demo data", source: "DEMO DATA" },
+];
 let csrfToken = "";
 let lastFocusedElement = null;
 const $ = (selector) => document.querySelector(selector);
@@ -224,8 +235,14 @@ async function loadProducts() {
     const query = $("#search").value;
     const crop = $("#cropFilter").value;
     const verified = $("#verifiedFilter").checked;
-    const data = await api(`/api/products?q=${encodeURIComponent(query)}&crop=${encodeURIComponent(crop)}&verified=${verified ? 1 : 0}`);
-    state.products = data.products;
+    if (isGithubPages) {
+      state.products = demoProducts.filter((product) =>
+        (!query || `${product.crop} ${product.location}`.toLowerCase().includes(query.toLowerCase())) &&
+        (!crop || product.crop === crop) && (!verified || product.verified));
+    } else {
+      const data = await api(`/api/products?q=${encodeURIComponent(query)}&crop=${encodeURIComponent(crop)}&verified=${verified ? 1 : 0}`);
+      state.products = data.products;
+    }
     renderProducts();
   } catch (error) {
     grid.innerHTML = `<div class="notice">${escapeHtml(error.message)}</div>`;
@@ -244,8 +261,7 @@ function renderPrices() {
 
 async function loadPrices() {
   try {
-    const data = await api("/api/prices");
-    state.prices = data.prices;
+    state.prices = isGithubPages ? demoPrices : (await api("/api/prices")).prices;
     renderPrices();
   } catch (error) {
     $("#priceList").innerHTML = `<div class="notice">${escapeHtml(error.message)}</div>`;
@@ -531,7 +547,7 @@ function help() {
 
 async function applyLocale() {
   try {
-    const response = await fetch(`/locales/${state.lang}.json`);
+    const response = await fetch(assetUrl(`./locales/${state.lang}.json`));
     state.locale = await response.json();
     document.querySelectorAll("[data-i18n]").forEach((node) => {
       const value = node.dataset.i18n.split(".").reduce((object, key) => object && object[key], state.locale);
@@ -588,7 +604,7 @@ async function init() {
     button.classList.add("is-pressed");
     window.setTimeout(() => button.classList.remove("is-pressed"), 180);
   });
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+  if (!isGithubPages && "serviceWorker" in navigator) navigator.serviceWorker.register(assetUrl("./sw.js")).catch(() => {});
   api("/api/auth/me").then((data) => {
     state.user = data.user;
     if (state.user) {
