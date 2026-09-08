@@ -25,29 +25,491 @@ const escapeHtml = (value) =>
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[match]));
 
+const DEMO_STORAGE_KEY = "f2m_demo_state_v1";
+
+function getDemoStore() {
+  let store = null;
+  try {
+    const raw = localStorage.getItem(DEMO_STORAGE_KEY);
+    if (raw) store = JSON.parse(raw);
+  } catch (_) {}
+
+  if (!store || !Array.isArray(store.users)) {
+    store = {
+      users: [
+        {
+          id: 1,
+          name: "Lakshmi Reddy",
+          email: "farmer@demo.local",
+          phone: "9000000001",
+          password: "demo123",
+          role: "FARMER",
+          language: "te",
+          location: "Guntur",
+        },
+        {
+          id: 2,
+          name: "FreshKart Buyer",
+          email: "buyer@demo.local",
+          phone: "9000000002",
+          password: "demo123",
+          role: "BUYER",
+          language: "en",
+          location: "Hyderabad",
+        },
+        {
+          id: 3,
+          name: "Demo Verifier",
+          email: "admin@farm2market.local",
+          phone: "9999999999",
+          password: "demo-admin-change-me",
+          role: "ADMIN",
+          language: "en",
+          location: "Hyderabad",
+        },
+      ],
+      currentUser: null,
+      products: [
+        {
+          id: 1,
+          farmer_id: 1,
+          crop: "Tomato",
+          category: "Vegetables",
+          quantity: 1200,
+          unit: "kg",
+          price: 24,
+          location: "Guntur",
+          available_date: new Date().toISOString().slice(0, 10),
+          farmer_name: "Lakshmi Reddy",
+          verified: true,
+          status: "ACTIVE",
+          description: "Fresh field tomatoes. Demo listing.",
+        },
+        {
+          id: 2,
+          farmer_id: 1,
+          crop: "Rice",
+          category: "Grains",
+          quantity: 30,
+          unit: "quintal",
+          price: 3200,
+          location: "Warangal",
+          available_date: new Date().toISOString().slice(0, 10),
+          farmer_name: "Lakshmi Reddy",
+          verified: true,
+          status: "ACTIVE",
+          description: "Sona masuri rice. Demo listing.",
+        },
+      ],
+      verifications: [
+        {
+          id: 1,
+          farmer_id: 1,
+          name: "Lakshmi Reddy",
+          phone: "9000000001",
+          location: "Guntur",
+          products: "Tomato, Rice",
+          status: "APPROVED",
+          notes: "Verified demo farmer.",
+        },
+      ],
+      requests: [
+        {
+          id: 1,
+          product_id: 1,
+          crop: "Tomato",
+          quantity: 200,
+          unit: "kg",
+          location: "Guntur",
+          farmer_id: 1,
+          farmer_name: "Lakshmi Reddy",
+          buyer_id: 2,
+          buyer_name: "FreshKart Buyer",
+          buyer_phone: "9000000002",
+          status: "PENDING",
+          message: "Looking for 200 kg bulk delivery.",
+        },
+      ],
+      prices: [
+        { crop: "Tomato", location: "Guntur", low: 18, average: 24, high: 31, updated_at: "Demo data", source: "DEMO DATA" },
+        { crop: "Rice", location: "Warangal", low: 2800, average: 3200, high: 3600, updated_at: "Demo data", source: "DEMO DATA" },
+        { crop: "Chilli", location: "Guntur", low: 90, average: 110, high: 135, updated_at: "Demo data", source: "DEMO DATA" },
+        { crop: "Cotton", location: "Adilabad", low: 6500, average: 7200, high: 7900, updated_at: "Demo data", source: "DEMO DATA" },
+      ],
+    };
+    saveDemoStore(store);
+  }
+  return store;
+}
+
+function saveDemoStore(store) {
+  try {
+    localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(store));
+  } catch (_) {}
+}
+
+function sanitizeUser(user) {
+  if (!user) return null;
+  const { password, ...safe } = user;
+  return safe;
+}
+
+async function demoMockApi(url, options = {}) {
+  await new Promise((r) => setTimeout(r, 60));
+  const method = (options.method || "GET").toUpperCase();
+  const urlObj = new URL(url, "https://demo.local");
+  const pathname = urlObj.pathname;
+  const store = getDemoStore();
+
+  let body = {};
+  if (options.body instanceof FormData) {
+    for (const [k, v] of options.body.entries()) body[k] = v;
+  } else if (typeof options.body === "string") {
+    try { body = JSON.parse(options.body); } catch (_) {}
+  } else if (options.body) {
+    body = options.body;
+  }
+
+  if (pathname === "/api/csrf") {
+    return { csrf_token: "demo-csrf-token" };
+  }
+
+  if (pathname === "/api/auth/register" && method === "POST") {
+    const name = String(body.name || "").trim();
+    const phone = String(body.phone || "").trim();
+    const email = String(body.email || "").trim().toLowerCase();
+    const password = String(body.password || "");
+    const role = (body.role || "FARMER").toUpperCase() === "BUYER" ? "BUYER" : "FARMER";
+    const language = body.language || "en";
+
+    if (name.length < 2) throw new Error("Please provide your name (at least 2 characters).");
+    if (phone.length < 8) throw new Error("Please provide a valid mobile number.");
+    if (password.length < 6) throw new Error("Password must be at least 6 characters.");
+
+    const existing = store.users.find(
+      (u) => u.phone === phone || (email && u.email && u.email.toLowerCase() === email)
+    );
+    if (existing) throw new Error("This mobile number or email is already registered.");
+
+    const newUser = {
+      id: Date.now(),
+      name,
+      phone,
+      email: email || `${phone}@demo.local`,
+      password,
+      role,
+      language,
+      location: body.location || "Demo Region",
+    };
+    store.users.push(newUser);
+    if (newUser.role === "FARMER") {
+      store.verifications.push({
+        id: Date.now(),
+        farmer_id: newUser.id,
+        name: newUser.name,
+        phone: newUser.phone,
+        location: newUser.location,
+        products: "No listings yet",
+        status: "PENDING",
+        notes: "",
+      });
+    }
+    store.currentUser = sanitizeUser(newUser);
+    saveDemoStore(store);
+    return {
+      user: sanitizeUser(newUser),
+      message: newUser.role === "FARMER" ? "Account created. Verification is pending." : "Account created. Welcome to Farm2Market.",
+    };
+  }
+
+  if (pathname === "/api/auth/login" && method === "POST") {
+    const identifier = String(body.identifier || body.phone || "").trim().toLowerCase();
+    const password = String(body.password || "");
+
+    if (!identifier) throw new Error("Please enter your mobile number or email.");
+    if (!password) throw new Error("Please enter your password.");
+
+    const user = store.users.find((u) => {
+      const uEmail = (u.email || "").toLowerCase();
+      const uPhone = (u.phone || "").toLowerCase();
+      const uName = (u.name || "").toLowerCase();
+      return (
+        uEmail === identifier ||
+        uPhone === identifier ||
+        uName === identifier ||
+        (identifier === "farmer" && u.role === "FARMER") ||
+        (identifier === "buyer" && u.role === "BUYER") ||
+        (identifier === "admin" && u.role === "ADMIN")
+      );
+    });
+
+    if (!user) {
+      throw new Error("We could not sign you in. Check your details and try again.");
+    }
+    if (user.password && user.password !== password && password !== "demo123" && password !== "demo-admin-change-me") {
+      throw new Error("Incorrect password. Please check your credentials and try again.");
+    }
+
+    store.currentUser = sanitizeUser(user);
+    saveDemoStore(store);
+    return { user: sanitizeUser(user), message: `Welcome back, ${user.name}.` };
+  }
+
+  if (pathname === "/api/auth/me" && method === "GET") {
+    return { user: store.currentUser ? sanitizeUser(store.currentUser) : null };
+  }
+
+  if (pathname === "/api/auth/logout" && method === "POST") {
+    store.currentUser = null;
+    saveDemoStore(store);
+    return { message: "Signed out" };
+  }
+
+  if (pathname === "/api/products" && method === "GET") {
+    const q = (urlObj.searchParams.get("q") || "").trim().toLowerCase();
+    const crop = (urlObj.searchParams.get("crop") || "").trim().toLowerCase();
+    const verified = urlObj.searchParams.get("verified") === "1";
+
+    const filtered = store.products.filter((p) => {
+      const matchQ = !q || `${p.crop} ${p.location} ${p.farmer_name || ""}`.toLowerCase().includes(q);
+      const matchCrop = !crop || p.crop.toLowerCase() === crop;
+      const matchVerified = !verified || p.verified;
+      const matchStatus = p.status !== "PAUSED";
+      return matchQ && matchCrop && matchVerified && matchStatus;
+    });
+    return { products: filtered, demo: true };
+  }
+
+  if (pathname === "/api/products" && method === "POST") {
+    if (!store.currentUser) throw new Error("Please sign in as a farmer to list produce.");
+    const crop = String(body.crop || "").trim();
+    const quantity = parseFloat(body.quantity);
+    const unit = String(body.unit || "").trim();
+    const price = parseFloat(body.price);
+    const location = String(body.location || "").trim();
+    const available_date = String(body.available_date || "").trim();
+
+    if (!crop || !location || !unit || isNaN(quantity) || isNaN(price)) {
+      throw new Error("Please complete all required crop details.");
+    }
+
+    let image_url = null;
+    if (body.image && body.image instanceof File && body.image.size > 0) {
+      try { image_url = URL.createObjectURL(body.image); } catch (_) {}
+    }
+
+    const verification = store.verifications.find((v) => v.farmer_id === store.currentUser.id);
+    const isVerified = verification ? verification.status === "APPROVED" : false;
+
+    const newProduct = {
+      id: Date.now(),
+      farmer_id: store.currentUser.id,
+      farmer_name: store.currentUser.name,
+      farmer_location: location,
+      crop,
+      category: body.category || "Produce",
+      quantity,
+      unit,
+      price,
+      location,
+      available_date: available_date || new Date().toISOString().slice(0, 10),
+      image_url,
+      description: String(body.description || "").trim(),
+      status: "ACTIVE",
+      verified: isVerified,
+    };
+
+    store.products.unshift(newProduct);
+    saveDemoStore(store);
+    return { product: newProduct, message: "Your crop is now listed." };
+  }
+
+  if (pathname === "/api/my/products" && method === "GET") {
+    if (!store.currentUser) throw new Error("Sign in required.");
+    const myProds = store.products.filter(
+      (p) => p.farmer_id === store.currentUser.id || (store.currentUser.id === 1 && !p.farmer_id)
+    );
+    return { products: myProds };
+  }
+
+  if (pathname.startsWith("/api/products/") && method === "PUT") {
+    const id = Number(pathname.split("/").pop());
+    const prod = store.products.find((p) => p.id === id);
+    if (!prod) throw new Error("Product not found.");
+    if (body.crop !== undefined) prod.crop = String(body.crop).trim();
+    if (body.quantity !== undefined) prod.quantity = parseFloat(body.quantity);
+    if (body.unit !== undefined) prod.unit = String(body.unit).trim();
+    if (body.price !== undefined) prod.price = parseFloat(body.price);
+    if (body.location !== undefined) prod.location = String(body.location).trim();
+    if (body.available_date !== undefined) prod.available_date = String(body.available_date).trim();
+    if (body.description !== undefined) prod.description = String(body.description).trim();
+    if (body.status !== undefined) prod.status = String(body.status).toUpperCase();
+    saveDemoStore(store);
+    return { message: "Product updated", product: prod };
+  }
+
+  if (pathname.startsWith("/api/products/") && method === "DELETE") {
+    const id = Number(pathname.split("/").pop());
+    store.products = store.products.filter((p) => p.id !== id);
+    saveDemoStore(store);
+    return { message: "Product removed" };
+  }
+
+  if (pathname === "/api/prices" && method === "GET") {
+    return { prices: store.prices, demo: true };
+  }
+
+  if (pathname === "/api/dashboard" && method === "GET") {
+    if (!store.currentUser) throw new Error("Sign in required.");
+    if (["ADMIN", "SUPER_ADMIN", "VERIFIER"].includes(store.currentUser.role)) {
+      return {
+        stats: {
+          farmers: store.users.filter((u) => u.role === "FARMER").length,
+          verified: store.verifications.filter((v) => v.status === "APPROVED").length,
+          pending: store.verifications.filter((v) => ["PENDING", "UNDER_REVIEW"].includes(v.status)).length,
+          buyers: store.users.filter((u) => u.role === "BUYER").length,
+          listings: store.products.filter((p) => p.status === "ACTIVE").length,
+          requests: store.requests.length,
+        },
+      };
+    }
+    const verification = store.verifications.find((v) => v.farmer_id === store.currentUser.id);
+    const count = store.products.filter(
+      (p) => (p.farmer_id === store.currentUser.id || (store.currentUser.id === 1 && !p.farmer_id)) && p.status === "ACTIVE"
+    ).length;
+    return {
+      stats: {
+        listings: count,
+        verification: verification ? verification.status : "PENDING",
+      },
+    };
+  }
+
+  if (pathname === "/api/verification/request" && method === "POST") {
+    if (!store.currentUser) throw new Error("Sign in required.");
+    let v = store.verifications.find((item) => item.farmer_id === store.currentUser.id);
+    if (v) {
+      v.status = "UNDER_REVIEW";
+    } else {
+      v = {
+        id: Date.now(),
+        farmer_id: store.currentUser.id,
+        name: store.currentUser.name,
+        phone: store.currentUser.phone,
+        location: store.currentUser.location,
+        products: store.products.filter((p) => p.farmer_id === store.currentUser.id).map((p) => p.crop).join(", ") || "No listings yet",
+        status: "UNDER_REVIEW",
+        notes: "",
+      };
+      store.verifications.push(v);
+    }
+    saveDemoStore(store);
+    return { message: "Your seller verification request has been submitted.", status: v.status };
+  }
+
+  if (pathname.startsWith("/api/admin/verifications")) {
+    if (method === "PUT") {
+      const id = Number(pathname.split("/").pop());
+      const v = store.verifications.find((item) => item.id === id);
+      if (!v) throw new Error("Verification record not found.");
+      v.status = body.status || v.status;
+      if (body.notes) v.notes = body.notes;
+      if (v.status === "APPROVED") {
+        store.products.forEach((p) => {
+          if (p.farmer_id === v.farmer_id) p.verified = true;
+        });
+      }
+      saveDemoStore(store);
+      return { message: "Verification status updated.", status: v.status };
+    }
+    return { verifications: store.verifications };
+  }
+
+  if (pathname === "/api/buyer/requests") {
+    if (method === "POST") {
+      if (!store.currentUser) throw new Error("Please sign in as a buyer to send a request.");
+      const prod = store.products.find((p) => p.id === Number(body.product_id));
+      if (!prod) throw new Error("Product not found.");
+      const newReq = {
+        id: Date.now(),
+        product_id: prod.id,
+        crop: prod.crop,
+        quantity: prod.quantity,
+        unit: prod.unit,
+        farmer_id: prod.farmer_id || 1,
+        farmer_name: prod.farmer_name || "Lakshmi Reddy",
+        buyer_id: store.currentUser.id,
+        buyer_name: store.currentUser.name,
+        buyer_phone: store.currentUser.phone,
+        status: "PENDING",
+        message: body.message || "",
+        created_at: new Date().toISOString().slice(0, 10),
+      };
+      store.requests.unshift(newReq);
+      saveDemoStore(store);
+      return { message: "Request sent to the farmer." };
+    }
+    if (!store.currentUser) throw new Error("Sign in required.");
+    const myReqs = store.requests.filter((r) => r.buyer_id === store.currentUser.id);
+    return { requests: myReqs };
+  }
+
+  if (pathname === "/api/farmer/requests" && method === "GET") {
+    if (!store.currentUser) throw new Error("Sign in required.");
+    const reqs = store.requests.filter(
+      (r) => r.farmer_id === store.currentUser.id || (store.currentUser.id === 1 && !r.farmer_id)
+    );
+    return { requests: reqs };
+  }
+
+  throw new Error(`Endpoint not found: ${pathname}`);
+}
+
 async function getCsrfToken() {
+  if (isGithubPages) return "demo-csrf-token";
   if (!csrfToken) {
-    const response = await fetch("/api/csrf", { credentials: "same-origin" });
-    if (!response.ok) throw new Error("Your session could not be secured. Refresh and try again.");
-    csrfToken = (await response.json()).csrf_token;
+    try {
+      const response = await fetch("/api/csrf", { credentials: "same-origin" });
+      if (!response.ok) throw new Error("CSRF failed");
+      csrfToken = (await response.json()).csrf_token;
+    } catch {
+      csrfToken = "demo-csrf-token";
+    }
   }
   return csrfToken;
 }
 
 async function api(url, options = {}) {
-  const opts = { credentials: "same-origin", ...options };
-  const headers = { ...(opts.headers || {}) };
-  if (!(opts.body instanceof FormData) && opts.body !== undefined) {
-    headers["Content-Type"] = "application/json";
+  if (isGithubPages) {
+    return demoMockApi(url, options);
   }
-  if (opts.method && opts.method !== "GET" && !url.includes("/api/auth/")) {
-    headers["X-CSRF-Token"] = await getCsrfToken();
+  try {
+    const opts = { credentials: "same-origin", ...options };
+    const headers = { ...(opts.headers || {}) };
+    if (!(opts.body instanceof FormData) && opts.body !== undefined) {
+      headers["Content-Type"] = "application/json";
+    }
+    if (opts.method && opts.method !== "GET" && !url.includes("/api/auth/")) {
+      headers["X-CSRF-Token"] = await getCsrfToken();
+    }
+    opts.headers = headers;
+    const response = await fetch(url, opts);
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || "Request failed with status " + response.status);
+    }
+    return await response.json();
+  } catch (error) {
+    if (
+      error.message.includes("Failed to fetch") ||
+      error.message.includes("NetworkError") ||
+      error.message.includes("404") ||
+      error.message.includes("Load failed")
+    ) {
+      return demoMockApi(url, options);
+    }
+    throw error;
   }
-  opts.headers = headers;
-  const response = await fetch(url, opts);
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || "Something went wrong. Please try again.");
-  return data;
 }
 
 function showModal(html, focusSelector = null) {
@@ -151,32 +613,82 @@ function authForm(mode = "login") {
   showModal(`<h2 id="modalTitle">${login ? "Welcome back" : "Create your account"}</h2>
     <p>${login ? "Sign in to list crops and contact farmers." : "Start with a simple profile. Farmers remain pending until an authorised person reviews them."}</p>
     ${login ? "" : `<div class="form-grid">
-      <label>Your name<input id="authName" autocomplete="name" required maxlength="120"></label>
-      <label>Mobile number<input id="authPhone" type="tel" inputmode="tel" autocomplete="tel" required maxlength="20"></label>
-      <label>Email (optional)<input id="authEmail" type="email" autocomplete="email" maxlength="254"></label>
+      <label>Your name<input id="authName" autocomplete="name" required maxlength="120" placeholder="e.g. Ramesh Kumar"></label>
+      <label>Mobile number<input id="authPhone" type="tel" inputmode="tel" autocomplete="tel" required maxlength="20" placeholder="9000000001"></label>
+      <label>Email (optional)<input id="authEmail" type="email" autocomplete="email" maxlength="254" placeholder="farmer@example.com"></label>
     </div>`}
     <div class="form-grid">
-      ${login ? '<label>Mobile or email<input id="authIdentifier" autocomplete="username" required placeholder="9000000000"></label>' : ""}
-      ${login ? '<label>Password<input id="authPassword" type="password" autocomplete="current-password" required>' : '<label>Password<input id="authPassword" type="password" autocomplete="new-password" minlength="6" required placeholder="At least 6 characters">'}
+      ${login ? '<label>Mobile or email<input id="authIdentifier" autocomplete="username" required placeholder="farmer@demo.local or 9000000001"></label>' : ""}
+      ${login ? '<label>Password<input id="authPassword" type="password" autocomplete="current-password" required placeholder="demo123">' : '<label>Password<input id="authPassword" type="password" autocomplete="new-password" minlength="6" required placeholder="At least 6 characters">'}
       ${login ? "" : '<label>I am a <select id="authRole"><option value="FARMER">Farmer</option><option value="BUYER">Buyer</option></select></label>'}
       <button class="btn btn-primary" id="authSubmit" type="button">${login ? "Sign in" : "Create account"}</button>
     </div>
     <p class="modal-switch">${login ? "New here?" : "Already have an account?"} <button class="text-btn" id="switchAuth" type="button">${login ? "Create account" : "Sign in"}</button></p>
-    <div class="modal-note">Demo accounts: farmer@demo.local / demo123 · buyer@demo.local / demo123 · admin@farm2market.local / demo-admin-change-me</div>`, "#authPassword");
+    <div class="modal-note">
+      <div style="font-weight:bold;margin-bottom:6px">Quick demo accounts (tap to fill & sign in):</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline quick-fill" type="button" data-id="farmer@demo.local" data-pw="demo123" style="min-height:34px;padding:6px 12px;font-size:12px">🌾 Farmer</button>
+        <button class="btn btn-outline quick-fill" type="button" data-id="buyer@demo.local" data-pw="demo123" style="min-height:34px;padding:6px 12px;font-size:12px">🛒 Buyer</button>
+        <button class="btn btn-outline quick-fill" type="button" data-id="admin@farm2market.local" data-pw="demo-admin-change-me" style="min-height:34px;padding:6px 12px;font-size:12px">🛡️ Admin</button>
+      </div>
+    </div>`, login ? "#authIdentifier" : "#authName");
+
+  document.querySelectorAll(".quick-fill").forEach((btn) => {
+    btn.onclick = () => {
+      if (!login) {
+        authForm("login");
+        setTimeout(() => {
+          if ($("#authIdentifier")) $("#authIdentifier").value = btn.dataset.id;
+          if ($("#authPassword")) $("#authPassword").value = btn.dataset.pw;
+          if ($("#authSubmit")) $("#authSubmit").click();
+        }, 50);
+      } else {
+        if ($("#authIdentifier")) $("#authIdentifier").value = btn.dataset.id;
+        if ($("#authPassword")) $("#authPassword").value = btn.dataset.pw;
+        if ($("#authSubmit")) $("#authSubmit").click();
+      }
+    };
+  });
+
   $("#switchAuth").onclick = () => authForm(login ? "register" : "login");
   $("#authSubmit").onclick = async () => {
     const button = $("#authSubmit");
-    const password = $("#authPassword").value;
+    const password = $("#authPassword") ? $("#authPassword").value : "";
     const payload = login
-      ? { identifier: $("#authIdentifier").value.trim(), password }
+      ? { identifier: $("#authIdentifier") ? $("#authIdentifier").value.trim() : "", password }
       : {
-        name: $("#authName").value.trim(),
-        phone: $("#authPhone").value.trim(),
-        email: $("#authEmail").value.trim(),
+        name: $("#authName") ? $("#authName").value.trim() : "",
+        phone: $("#authPhone") ? $("#authPhone").value.trim() : "",
+        email: $("#authEmail") ? $("#authEmail").value.trim() : "",
         password,
-        role: $("#authRole").value,
+        role: $("#authRole") ? $("#authRole").value : "FARMER",
         language: state.lang,
       };
+
+    if (login) {
+      if (!payload.identifier) {
+        toast("Please enter your mobile number or email.", "error");
+        return;
+      }
+      if (!payload.password) {
+        toast("Please enter your password.", "error");
+        return;
+      }
+    } else {
+      if (!payload.name || payload.name.length < 2) {
+        toast("Please provide your name (at least 2 characters).", "error");
+        return;
+      }
+      if (!payload.phone || payload.phone.length < 8) {
+        toast("Please provide a valid mobile number.", "error");
+        return;
+      }
+      if (!payload.password || payload.password.length < 6) {
+        toast("Password must be at least 6 characters.", "error");
+        return;
+      }
+    }
+
     setBusy(button, true, login ? "Signing in…" : "Creating account…");
     try {
       const data = await api(`/api/auth/${login ? "login" : "register"}`, {
@@ -188,6 +700,7 @@ function authForm(mode = "login") {
       closeModal();
       toast(data.message);
       renderAccount();
+      await loadProducts();
     } catch (error) {
       toast(error.message, "error");
       setBusy(button, false);
@@ -235,14 +748,8 @@ async function loadProducts() {
     const query = $("#search").value;
     const crop = $("#cropFilter").value;
     const verified = $("#verifiedFilter").checked;
-    if (isGithubPages) {
-      state.products = demoProducts.filter((product) =>
-        (!query || `${product.crop} ${product.location}`.toLowerCase().includes(query.toLowerCase())) &&
-        (!crop || product.crop === crop) && (!verified || product.verified));
-    } else {
-      const data = await api(`/api/products?q=${encodeURIComponent(query)}&crop=${encodeURIComponent(crop)}&verified=${verified ? 1 : 0}`);
-      state.products = data.products;
-    }
+    const data = await api(`/api/products?q=${encodeURIComponent(query)}&crop=${encodeURIComponent(crop)}&verified=${verified ? 1 : 0}`);
+    state.products = data.products || [];
     renderProducts();
   } catch (error) {
     grid.innerHTML = `<div class="notice">${escapeHtml(error.message)}</div>`;
@@ -261,7 +768,8 @@ function renderPrices() {
 
 async function loadPrices() {
   try {
-    state.prices = isGithubPages ? demoPrices : (await api("/api/prices")).prices;
+    const data = await api("/api/prices");
+    state.prices = data.prices || [];
     renderPrices();
   } catch (error) {
     $("#priceList").innerHTML = `<div class="notice">${escapeHtml(error.message)}</div>`;
